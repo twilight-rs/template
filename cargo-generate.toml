@@ -1,0 +1,5 @@
+[template]
+ignore = [".github", "Cargo.lock", "target"]
+
+[hooks]
+init = ["init-script.rhai"]
