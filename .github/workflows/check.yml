@@ -4,13 +4,20 @@ on:
   merge_group:
   pull_request:
 
+env:
+  RUSTFLAGS: -D warnings
+
 jobs:
-  build:
+  clippy:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
       - uses: Swatinem/rust-cache@v2
 
       - uses: taiki-e/install-action@v2
@@ -19,5 +26,26 @@ jobs:
 
       - run: cargo generate --path . --name instance
 
-      - run: cargo check
+      - run: cargo clippy
+        working-directory: instance
+
+  fmt:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-generate
+
+      - run: cargo generate --path . --name instance
+
+      - run: cargo fmt -- --check
         working-directory: instance
