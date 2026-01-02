@@ -1,11 +1,15 @@
 mod context;
+mod resume;
 
 use crate::context::CONTEXT;
-use anyhow::Context;
-use std::{env, error::Error, pin::pin};
+use anyhow::Context as _;
+use std::{env, error::Error, pin::pin, time::Duration};
 use tokio::signal;
 use tokio_util::task::TaskTracker;
-use twilight_gateway::{CloseFrame, Config, Event, EventTypeFlags, Intents, Shard, StreamExt as _};
+use twilight_gateway::{
+    CloseFrame, ConfigBuilder, Event, EventTypeFlags, Intents, Shard, StreamExt as _,
+    queue::InMemoryQueue,
+};
 use twilight_http::Client;
 use twilight_model::gateway::payload::incoming::MessageCreate;
 
@@ -18,12 +22,23 @@ async fn main() -> anyhow::Result<()> {
 
     let token = env::var("TOKEN").context("reading `TOKEN`")?;
 
-    let config = Config::new(token.clone(), INTENTS);
-    let http = Client::new(token);
-    let shards = twilight_gateway::create_recommended(&http, config, |_, builder| builder.build())
+    let http = Client::new(token.clone());
+    let info = async { Ok::<_, anyhow::Error>(http.gateway().authed().await?.model().await?) }
         .await
-        .context("creating shards")?;
+        .context("getting info")?;
     context::initialize(http);
+
+    // The queue defaults are static and may be incorrect for large or newly
+    // restarted bots.
+    let queue = InMemoryQueue::new(
+        info.session_start_limit.max_concurrency,
+        info.session_start_limit.remaining,
+        Duration::from_millis(info.session_start_limit.reset_after),
+        info.session_start_limit.total,
+    );
+    let config = ConfigBuilder::new(token, INTENTS).queue(queue).build();
+
+    let shards = resume::restore(config, info.shards).await;
 
     let tasks = shards
         .into_iter()
@@ -34,21 +49,27 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("shutting down; press CTRL-C to abort");
 
     let join_all_tasks = async {
+        let mut resume_info = Vec::new();
         for task in tasks {
-            task.await?;
+            resume_info.push(task.await?);
         }
-        Ok::<_, anyhow::Error>(())
+        Ok::<_, anyhow::Error>(resume_info)
     };
-    tokio::select! {
-        _ = signal::ctrl_c() => {},
-        _ = join_all_tasks => {},
+    let resume_info = tokio::select! {
+        _ = signal::ctrl_c() => Vec::new(),
+        resume_info = join_all_tasks => resume_info?,
     };
+
+    // Save shard information to be restored.
+    resume::save(&resume_info)
+        .await
+        .context("saving resume info")?;
 
     Ok(())
 }
 
 #[tracing::instrument(fields(shard = %shard.id(), skip_all))]
-async fn dispatcher(mut shard: Shard) {
+async fn dispatcher(mut shard: Shard) -> resume::Info {
     let mut is_shutdown = false;
     let tracker = TaskTracker::new();
     let mut shutdown_fut = pin!(signal::ctrl_c());
@@ -56,7 +77,7 @@ async fn dispatcher(mut shard: Shard) {
     loop {
         tokio::select! {
             _ = &mut shutdown_fut, if !is_shutdown => {
-                shard.close(CloseFrame::NORMAL);
+                shard.close(CloseFrame::RESUME);
                 is_shutdown = true;
             },
             Some(item) = shard.next_event(EVENT_TYPES) => {
@@ -86,6 +107,8 @@ async fn dispatcher(mut shard: Shard) {
 
     tracker.close();
     tracker.wait().await;
+
+    resume::Info::from(&shard)
 }
 
 #[tracing::instrument(fields(id = %event.id), skip_all)]
