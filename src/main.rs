@@ -25,12 +25,24 @@ async fn main() -> anyhow::Result<()> {
         .context("creating shards")?;
     context::initialize(http);
 
-    let tracker = TaskTracker::new();
-    for shard in shards {
-        tracker.spawn(dispatcher(shard));
-    }
-    tracker.close();
-    tracker.wait().await;
+    let tasks = shards
+        .into_iter()
+        .map(|shard| tokio::spawn(dispatcher(shard)))
+        .collect::<Vec<_>>();
+
+    signal::ctrl_c().await?;
+    tracing::info!("shutting down; press CTRL-C to abort");
+
+    let join_all_tasks = async {
+        for task in tasks {
+            task.await?;
+        }
+        Ok::<_, anyhow::Error>(())
+    };
+    tokio::select! {
+        _ = signal::ctrl_c() => {},
+        _ = join_all_tasks => {},
+    };
 
     Ok(())
 }
