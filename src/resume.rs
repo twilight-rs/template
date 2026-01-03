@@ -4,6 +4,23 @@ use twilight_gateway::{Config, ConfigBuilder, Session, Shard, ShardId};
 
 const INFO_FILE: &str = "resume-info.json";
 
+pub trait ConfigBuilderExt {
+    fn resume_info(self, resume_info: Info) -> Self;
+}
+
+impl ConfigBuilderExt for ConfigBuilder {
+    fn resume_info(mut self, resume_info: Info) -> Self {
+        if let Some(resume_url) = resume_info.resume_url {
+            self = self.resume_url(resume_url);
+        }
+        if let Some(session) = resume_info.session {
+            self = self.session(session);
+        }
+
+        self
+    }
+}
+
 /// [`Shard`] session resumption information.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Info {
@@ -46,9 +63,9 @@ pub async fn restore(config: Config, shards: u32) -> Vec<Shard> {
 
     let shard_ids = (0..shards).map(|shard| ShardId::new(shard, shards));
 
-    // A session may only successfully be resumed if it retains its shard ID,
-    // but Discord may have recommend a different shard count (producing
-    // different shard IDs).
+    // A session may only be successfully resumed if it retains its shard ID, but
+    // Discord may have recommend a different shard count (producing different shard
+    // IDs).
     let shards: Vec<_> = if let Ok(info) = info
         && info.len() == shards as usize
     {
@@ -56,15 +73,7 @@ pub async fn restore(config: Config, shards: u32) -> Vec<Shard> {
         shard_ids
             .zip(info)
             .map(|(shard_id, info)| {
-                let mut builder = ConfigBuilder::from(config.clone());
-
-                if let Some(resume_url) = info.resume_url {
-                    builder = builder.resume_url(resume_url);
-                }
-                if let Some(session) = info.session {
-                    builder = builder.session(session);
-                }
-
+                let builder = ConfigBuilder::from(config.clone()).resume_info(info);
                 Shard::with_config(shard_id, builder.build())
             })
             .collect()
