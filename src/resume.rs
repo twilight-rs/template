@@ -46,9 +46,9 @@ pub async fn restore(config: Config, shards: u32) -> Vec<Shard> {
 
     let shard_ids = (0..shards).map(|shard| ShardId::new(shard, shards));
 
-    // A session may only successfully be resumed if it retains its shard ID,
-    // but Discord may have recommend a different shard count (producing
-    // different shard IDs).
+    // A session may only be successfully resumed if it retains its shard ID, but
+    // Discord may have recommend a different shard count (producing different shard
+    // IDs).
     let shards: Vec<_> = if let Ok(info) = info
         && info.len() == shards as usize
     {
