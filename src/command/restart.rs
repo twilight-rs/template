@@ -47,7 +47,7 @@ pub async fn autocomplete(
 
     let choices: Vec<_> = match value.parse() {
         Ok(shard_id) if shard_id == 0 => vec![choice(shard_id)],
-        Ok(shard_id) => starts_with(shard_id, CONTEXT.shard_handles.len() as u32 - 1)
+        Ok(shard_id) => starts_with(shard_id, CONTEXT.shard_handles.len() as u32)
             .take(25)
             .map(choice)
             .collect(),
@@ -149,20 +149,20 @@ pub async fn run(event: Box<InteractionCreate>, mut data: Box<CommandData>) -> a
 /// # Example
 ///
 /// ```
-/// let values = starts_with(5, 100);
-/// assert!(values.eq([5..6, 50..60].into_iter().flatten()));
+/// let values = starts_with(1, 100);
+/// assert!(values.eq([1..2, 10..20].into_iter().flatten()));
 ///
-/// let values = starts_with(50, 1000);
-/// assert!(values.eq([50..51, 500..510].into_iter().flatten()));
+/// let values = starts_with(10, 1000);
+/// assert!(values.eq([10..11, 100..110].into_iter().flatten()));
 ///
-/// let values = starts_with(5, 1000);
-/// assert!(values.eq([5..6, 50..60, 500..600].into_iter().flatten()));
+/// let values = starts_with(1, 1000);
+/// assert!(values.eq([1..2, 10..20, 100..200].into_iter().flatten()));
 /// ```
 fn starts_with(value: u32, max: u32) -> impl Iterator<Item = u32> {
     debug_assert_ne!(value, 0);
 
     iter::successors(Some(1_u32), |n| n.checked_mul(10))
-        .take_while(move |&n| value * n <= max)
+        .take_while(move |&n| value * n < max)
         .flat_map(move |n| {
             let start = value * n;
             let end = ((value + 1) * n - 1).min(max);
