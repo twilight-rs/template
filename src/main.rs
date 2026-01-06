@@ -5,7 +5,7 @@ mod resume;
 
 pub(crate) use self::{
     context::CONTEXT,
-    dispatch::{ShardHandle, ShardRestartType},
+    dispatch::{ShardHandle, ShardRestartKind},
     resume::{ConfigBuilderExt, Info as ResumeInfo},
 };
 

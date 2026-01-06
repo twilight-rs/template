@@ -1,4 +1,4 @@
-use crate::{APPLICATION_ID, CONTEXT, ShardRestartType};
+use crate::{APPLICATION_ID, CONTEXT, ShardRestartKind};
 use std::iter;
 use twilight_model::{
     application::{
@@ -82,8 +82,8 @@ pub async fn run(event: Box<InteractionCreate>, mut data: Box<CommandData>) -> a
         Some(CommandDataOption {
             value: CommandOptionValue::Boolean(true),
             ..
-        }) => ShardRestartType::Resume,
-        _ => ShardRestartType::Normal,
+        }) => ShardRestartKind::Resume,
+        _ => ShardRestartKind::Normal,
     };
 
     let shard_handle = CONTEXT
@@ -104,7 +104,7 @@ pub async fn run(event: Box<InteractionCreate>, mut data: Box<CommandData>) -> a
             data: Some(data),
         }
     } else {
-        tracing::debug!(shard.id = shard_id, type = ?kind, "restarting shard");
+        tracing::debug!(shard.id = shard_id, ?kind, "restarting shard");
         InteractionResponse {
             kind: InteractionResponseType::DeferredChannelMessageWithSource,
             data: None,

@@ -18,17 +18,17 @@ pub fn global_commands() -> [Command; 1] {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Type {
+enum Kind {
     Ping,
     Restart,
 }
 
-impl From<&str> for Type {
-    fn from(value: &str) -> Self {
-        match value {
-            ping::NAME => Type::Ping,
-            restart::NAME => Type::Restart,
-            _ => panic!("unknown command name: '{value}'"),
+impl From<&str> for Kind {
+    fn from(name: &str) -> Self {
+        match name {
+            ping::NAME => Kind::Ping,
+            restart::NAME => Kind::Restart,
+            _ => panic!("unknown command name: '{name}'"),
         }
     }
 }
@@ -42,8 +42,8 @@ pub async fn interaction(mut event: Box<InteractionCreate>) -> anyhow::Result<()
             let kind = data.name.as_str().into();
 
             match kind {
-                Type::Ping => ping::autocomplete(event, data).await?,
-                Type::Restart => restart::autocomplete(event, data).await?,
+                Kind::Ping => ping::autocomplete(event, data).await?,
+                Kind::Restart => restart::autocomplete(event, data).await?,
             }
         }
         InteractionType::ApplicationCommand => {
@@ -53,8 +53,8 @@ pub async fn interaction(mut event: Box<InteractionCreate>) -> anyhow::Result<()
             let kind = data.name.as_str().into();
 
             match kind {
-                Type::Ping => ping::run(event, data).await?,
-                Type::Restart => restart::run(event, data).await?,
+                Kind::Ping => ping::run(event, data).await?,
+                Kind::Restart => restart::run(event, data).await?,
             }
         }
         _ => {}

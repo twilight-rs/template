@@ -19,10 +19,10 @@ impl ShardRestartResult {
 
 /// Handle for a [`Shard`].
 #[derive(Clone, Debug)]
-pub struct ShardHandle(watch::Sender<Option<ShardRestartType>>);
+pub struct ShardHandle(watch::Sender<Option<ShardRestartKind>>);
 
 impl ShardHandle {
-    fn insert(shard_id: ShardId) -> watch::Receiver<Option<ShardRestartType>> {
+    fn insert(shard_id: ShardId) -> watch::Receiver<Option<ShardRestartKind>> {
         let (tx, rx) = watch::channel(None);
         CONTEXT
             .shard_handles
@@ -39,7 +39,7 @@ impl ShardHandle {
     }
 
     /// Instructs the shard to restart, or force restart if called multiple times.
-    pub fn restart(&self, kind: ShardRestartType) -> ShardRestartResult {
+    pub fn restart(&self, kind: ShardRestartKind) -> ShardRestartResult {
         match self.0.send_replace(Some(kind)) {
             Some(_) => ShardRestartResult::ForcedRestart,
             None => ShardRestartResult::Restarted,
@@ -57,16 +57,16 @@ impl ShardHandle {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum ShardRestartType {
+pub enum ShardRestartKind {
     Normal,
     Resume,
 }
 
-impl From<ShardRestartType> for CloseFrame<'_> {
-    fn from(value: ShardRestartType) -> Self {
+impl From<ShardRestartKind> for CloseFrame<'_> {
+    fn from(value: ShardRestartKind) -> Self {
         match value {
-            ShardRestartType::Normal => Self::NORMAL,
-            ShardRestartType::Resume => Self::RESUME,
+            ShardRestartKind::Normal => Self::NORMAL,
+            ShardRestartKind::Resume => Self::RESUME,
         }
     }
 }
