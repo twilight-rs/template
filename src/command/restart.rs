@@ -45,13 +45,15 @@ pub async fn autocomplete(
         unreachable!()
     };
 
-    let choices = match value.parse() {
+    let choices: Vec<_> = match value.parse() {
         Ok(shard_id) if shard_id == 0 => vec![choice(shard_id)],
         Ok(shard_id) => starts_with(shard_id, CONTEXT.shard_handles.len() as u32 - 1)
             .take(25)
             .map(choice)
-            .collect::<Vec<_>>(),
-        Err(_) => Vec::new(),
+            .collect(),
+        Err(_) => (0..25.min(CONTEXT.shard_handles.len() as u32))
+            .map(choice)
+            .collect(),
     };
     let data = InteractionResponseData {
         choices: Some(choices),
