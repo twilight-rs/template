@@ -80,14 +80,10 @@ pub async fn run(event: Box<InteractionCreate>, mut data: Box<CommandData>) -> a
     };
     let kind = match options.next() {
         Some(CommandDataOption {
-            name: _,
-            value: CommandOptionValue::Boolean(resume),
-        }) => match resume {
-            true => ShardRestartType::Resume,
-            false => ShardRestartType::Normal,
-        },
-        None => ShardRestartType::Normal,
-        Some(_) => unreachable!(),
+            value: CommandOptionValue::Boolean(true),
+            ..
+        }) => ShardRestartType::Resume,
+        _ => ShardRestartType::Normal,
     };
 
     let shard_handle = CONTEXT
