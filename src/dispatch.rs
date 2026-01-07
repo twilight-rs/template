@@ -93,12 +93,12 @@ impl State {
 
 pub struct Dispatcher<'a> {
     #[allow(dead_code)]
-    pub shard: &'a Shard,
+    pub shard: &'a mut Shard,
     tracker: &'a TaskTracker,
 }
 
 impl<'a> Dispatcher<'a> {
-    fn new(shard: &'a Shard, tracker: &'a TaskTracker) -> Self {
+    fn new(shard: &'a mut Shard, tracker: &'a TaskTracker) -> Self {
         Self { shard, tracker }
     }
 
@@ -142,7 +142,7 @@ pub async fn run(mut shard: Shard, mut event_handler: impl FnMut(Dispatcher, Eve
                 event = shard.next_event(EVENT_TYPES) => {
                     match event {
                         Some(Ok(Event::GatewayClose(_))) if !state.is_active() => break,
-                        Some(Ok(event)) => event_handler(Dispatcher::new(&shard, &tracker), event),
+                        Some(Ok(event)) => event_handler(Dispatcher::new(&mut shard, &tracker), event),
                         Some(Err(error)) => {
                             tracing::warn!(error = &error as &dyn Error, "shard failed to receive an event");
                             continue;
