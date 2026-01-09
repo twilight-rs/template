@@ -1,20 +1,32 @@
+mod command;
 mod context;
+mod dispatch;
 mod resume;
 
-use crate::context::CONTEXT;
-use anyhow::Context as _;
-use std::{env, error::Error, pin::pin, time::Duration};
-use tokio::signal;
-use tokio_util::task::TaskTracker;
-use twilight_gateway::{
-    CloseFrame, ConfigBuilder, Event, EventTypeFlags, Intents, Shard, StreamExt as _,
-    queue::InMemoryQueue,
+pub(crate) use self::{
+    context::CONTEXT,
+    dispatch::{ShardHandle, ShardRestartKind},
+    resume::{ConfigBuilderExt, Info as ResumeInfo},
 };
-use twilight_http::Client;
-use twilight_model::gateway::payload::incoming::MessageCreate;
 
-const EVENT_TYPES: EventTypeFlags = EventTypeFlags::MESSAGE_CREATE;
-const INTENTS: Intents = Intents::GUILD_MESSAGES.union(Intents::MESSAGE_CONTENT);
+use anyhow::Context as _;
+use dashmap::DashMap;
+use std::{env, time::Duration};
+use tokio::signal;
+use tracing::Instrument as _;
+use twilight_gateway::{ConfigBuilder, Event, EventTypeFlags, Intents, queue::InMemoryQueue};
+use twilight_http::Client;
+use twilight_model::id::{
+    Id,
+    marker::{ApplicationMarker, GuildMarker},
+};
+
+#[rustfmt::skip]
+const ADMIN_GUILD_ID: Id<GuildMarker> = Id::new({{admin_guild_id}});
+#[rustfmt::skip]
+const APPLICATION_ID: Id<ApplicationMarker> = Id::new({{application_id}});
+const EVENT_TYPES: EventTypeFlags = EventTypeFlags::INTERACTION_CREATE;
+const INTENTS: Intents = Intents::empty();
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -26,7 +38,19 @@ async fn main() -> anyhow::Result<()> {
     let info = async { Ok::<_, anyhow::Error>(http.gateway().authed().await?.model().await?) }
         .await
         .context("getting info")?;
-    context::initialize(http);
+    async {
+        http.interaction(APPLICATION_ID)
+            .set_global_commands(&command::global_commands())
+            .await?;
+        http.interaction(APPLICATION_ID)
+            .set_guild_commands(ADMIN_GUILD_ID, &command::admin_commands(info.shards))
+            .await?;
+        Ok::<_, anyhow::Error>(())
+    }
+    .await
+    .context("putting commands")?;
+    let shard_handles = DashMap::new();
+    context::initialize(http, shard_handles);
 
     // The queue defaults are static and may be incorrect for large or newly
     // restarted bots.
@@ -42,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
 
     let tasks = shards
         .into_iter()
-        .map(|shard| tokio::spawn(dispatcher(shard)))
+        .map(|shard| tokio::spawn(dispatch::run(shard, event_handler)))
         .collect::<Vec<_>>();
 
     signal::ctrl_c().await?;
@@ -68,63 +92,13 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tracing::instrument(fields(shard = %shard.id(), skip_all))]
-async fn dispatcher(mut shard: Shard) -> resume::Info {
-    let mut is_shutdown = false;
-    let tracker = TaskTracker::new();
-    let mut shutdown_fut = pin!(signal::ctrl_c());
-
-    loop {
-        tokio::select! {
-            _ = &mut shutdown_fut, if !is_shutdown => {
-                shard.close(CloseFrame::RESUME);
-                is_shutdown = true;
-            },
-            Some(item) = shard.next_event(EVENT_TYPES) => {
-                let event = match item {
-                    Ok(event) => event,
-                    Err(error) => {
-                        tracing::warn!(error = &error as &dyn Error, "error receiving event");
-                        continue;
-                    }
-                };
-                let kind = event.kind();
-
-                let handler = match event {
-                    Event::GatewayClose(_) if is_shutdown => break,
-                    Event::MessageCreate(event) => message(event),
-                    _ => continue,
-                };
-
-                tracker.spawn(async move {
-                    if let Err(error) = handler.await {
-                        tracing::warn!(error = &*error, type = ?kind, "error handling event");
-                    }
-                });
-            }
-        }
-    }
-
-    tracker.close();
-    tracker.wait().await;
-
-    resume::Info::from(&shard)
-}
-
-#[tracing::instrument(fields(id = %event.id), skip_all)]
-async fn message(event: Box<MessageCreate>) -> anyhow::Result<()> {
+fn event_handler(dispatcher: dispatch::Dispatcher, event: Event) {
     #[allow(clippy::single_match)]
-    match &*event.content {
-        "!ping" => {
-            tracing::debug!(channel_id = %event.channel_id, "received ping");
-            CONTEXT
-                .http
-                .create_message(event.channel_id)
-                .content("Pong!")
-                .await?;
+    match event {
+        Event::InteractionCreate(event) => {
+            let span = tracing::info_span!(parent: None, "interaction", id = %event.id);
+            dispatcher.dispatch(command::interaction(event).instrument(span));
         }
         _ => {}
     }
-
-    Ok(())
 }
