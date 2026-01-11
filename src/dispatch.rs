@@ -2,7 +2,6 @@ use crate::{CONTEXT, ConfigBuilderExt as _, EVENT_TYPES, ResumeInfo};
 use std::{error::Error, pin::pin};
 use tokio::{signal, sync::watch};
 use tokio_util::task::TaskTracker;
-use tracing::instrument::Instrumented;
 use twilight_gateway::{CloseFrame, ConfigBuilder, Event, Shard, ShardId, StreamExt as _};
 
 #[derive(Clone, Copy, Debug)]
@@ -102,17 +101,8 @@ impl<'a> Dispatcher<'a> {
         Self { shard, tracker }
     }
 
-    pub fn dispatch(
-        &self,
-        future: Instrumented<impl Future<Output = anyhow::Result<()>> + Send + 'static>,
-    ) {
-        self.tracker.spawn(async move {
-            let mut future = pin!(future);
-            if let Err(error) = future.as_mut().await {
-                let _enter = future.span().enter();
-                tracing::warn!(error = &*error, "event handler failed");
-            }
-        });
+    pub fn dispatch(self, future: impl Future<Output = ()> + Send + 'static) {
+        self.tracker.spawn(future);
     }
 }
 
@@ -160,6 +150,7 @@ pub async fn run(mut shard: Shard, mut event_handler: impl FnMut(Dispatcher, Eve
             shard = Shard::with_config(shard.id(), builder.build());
         } else {
             tracker.close();
+            tracing::info!("waiting for {} task(s) to finish", tracker.len());
             tracker.wait().await;
             return resume_info;
         }
