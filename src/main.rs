@@ -11,9 +11,9 @@ pub(crate) use self::{
 
 use anyhow::Context as _;
 use dashmap::DashMap;
-use std::{env, time::Duration};
+use std::{env, pin::pin, time::Duration};
 use tokio::signal;
-use tracing::Instrument as _;
+use tracing::{Instrument as _, instrument::Instrumented};
 use twilight_gateway::{ConfigBuilder, Event, EventTypeFlags, Intents, queue::InMemoryQueue};
 use twilight_http::Client;
 use twilight_model::id::{
@@ -93,11 +93,19 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn event_handler(dispatcher: dispatch::Dispatcher, event: Event) {
+    async fn log_err(future: Instrumented<impl Future<Output = anyhow::Result<()>>>) {
+        let mut future = pin!(future);
+        if let Err(error) = future.as_mut().await {
+            let _enter = future.span().enter();
+            tracing::warn!(error = &*error, "event handler failed");
+        }
+    }
+
     #[allow(clippy::single_match)]
     match event {
         Event::InteractionCreate(event) => {
             let span = tracing::info_span!(parent: None, "interaction", id = %event.id);
-            dispatcher.dispatch(command::interaction(event).instrument(span));
+            dispatcher.dispatch(log_err(command::interaction(event).instrument(span)))
         }
         _ => {}
     }
