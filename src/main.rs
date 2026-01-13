@@ -14,7 +14,9 @@ use dashmap::DashMap;
 use std::{env, pin::pin, time::Duration};
 use tokio::signal;
 use tracing::{Instrument as _, instrument::Instrumented};
-use twilight_gateway::{ConfigBuilder, Event, EventTypeFlags, Intents, queue::InMemoryQueue};
+use twilight_gateway::{
+    ConfigBuilder, Event, EventTypeFlags, Intents, Shard, queue::InMemoryQueue,
+};
 use twilight_http::Client;
 use twilight_model::id::{
     Id,
@@ -66,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
 
     let tasks = shards
         .into_iter()
-        .map(|shard| tokio::spawn(dispatch::run(shard, event_handler)))
+        .map(|shard| tokio::spawn(dispatch::run(shard, handler)))
         .collect::<Vec<_>>();
 
     signal::ctrl_c().await?;
@@ -92,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn event_handler(dispatcher: dispatch::Dispatcher, event: Event) {
+fn handler(event: Event, _shard: &mut Shard) -> impl Future<Output = ()> + use<> {
     async fn log_err(future: Instrumented<impl Future<Output = anyhow::Result<()>>>) {
         let mut future = pin!(future);
         if let Err(error) = future.as_mut().await {
@@ -101,12 +103,14 @@ fn event_handler(dispatcher: dispatch::Dispatcher, event: Event) {
         }
     }
 
-    #[allow(clippy::single_match)]
-    match event {
-        Event::InteractionCreate(event) => {
-            let span = tracing::info_span!(parent: None, "interaction", id = %event.id);
-            dispatcher.dispatch(log_err(command::interaction(event).instrument(span)))
+    async {
+        #[allow(clippy::single_match)]
+        match event {
+            Event::InteractionCreate(event) => {
+                let span = tracing::info_span!("interaction", id = %event.id);
+                log_err(command::interaction(event).instrument(span)).await;
+            }
+            _ => {}
         }
-        _ => {}
     }
 }
