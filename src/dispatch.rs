@@ -91,11 +91,11 @@ impl State {
 }
 
 #[tracing::instrument(name = "dispatcher", fields(shard.id = shard.id().number()), skip_all)]
-pub async fn run<H, Fut>(mut shard: Shard, mut event_handler: H) -> ResumeInfo
-where
-    H: FnMut(Event, &mut Shard) -> Fut,
-    Fut: Future<Output = ()> + Send + 'static,
-{
+pub async fn run<Fut: Future<Output = ()> + Send + 'static, S>(
+    mut event_handler: impl FnMut(Event, S) -> Fut,
+    mut shard: Shard,
+    mut shard_state_provider: impl FnMut(&mut Shard) -> S,
+) -> ResumeInfo {
     let mut receiver = ShardHandle::insert(shard.id());
     let mut shutdown = pin!(signal::ctrl_c());
     let tracker = TaskTracker::new();
@@ -120,8 +120,8 @@ where
                 event = shard.next_event(EVENT_TYPES) => {
                     match event {
                         Some(Ok(Event::GatewayClose(_))) if !state.is_active() => break,
-                        Some(Ok(event)) => _ = tracker.spawn(event_handler(event, &mut shard)),
-                        Some(Err(error)) => tracing::warn!(error = &error as &dyn Error, "shard failed to receive an event"),
+                        Some(Ok(event)) => _ = tracker.spawn(event_handler(event, shard_state_provider(&mut shard))),
+                        Some(Err(error)) => tracing::warn!(error = &error as &dyn Error, "shard failed to receive event"),
                         None => break,
                     }
                 }
