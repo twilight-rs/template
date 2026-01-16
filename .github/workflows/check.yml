@@ -9,6 +9,9 @@ env:
 
 jobs:
   clippy:
+    strategy:
+      matrix:
+        variant: ["multi-process", "single-process"]
     runs-on: ubuntu-latest
 
     steps:
@@ -24,12 +27,15 @@ jobs:
         with:
           tool: cargo-generate
 
-      - run: cargo generate --path . --name instance --template-values-file .github/template-values.toml
+      - run: cargo generate ${{ matrix.variant }} --path . --name instance --values-file .github/values.toml
 
       - run: cargo clippy
         working-directory: instance
 
-  fmt:
+  rustfmt:
+    strategy:
+      matrix:
+        variant: ["multi-process", "single-process"]
     runs-on: ubuntu-latest
 
     steps:
@@ -45,7 +51,7 @@ jobs:
         with:
           tool: cargo-generate
 
-      - run: cargo generate --path . --name instance --template-values-file .github/template-values.toml
+      - run: cargo generate ${{ matrix.variant }} --path . --name instance --values-file .github/values.toml
 
       - run: cargo fmt -- --check
         working-directory: instance

@@ -1,0 +1,5 @@
+[template]
+ignore = ["Cargo.lock", "target"]
+
+[placeholders]
+application_id = { prompt = "Enter the application ID (available in the applications dashboard: <https://discord.com/developers/applications>)", type = "string" }
