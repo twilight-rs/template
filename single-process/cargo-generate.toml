@@ -1,0 +1,6 @@
+[template]
+ignore = ["Cargo.lock", "target"]
+
+[placeholders]
+admin_guild_id = { prompt = "Enter the admin guild ID (where admin commands are available)", type = "string" }
+application_id = { prompt = "Enter the application ID (available in the applications dashboard: <https://discord.com/developers/applications>)", type = "string" }
