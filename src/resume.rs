@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::iter;
 use tokio::fs;
 use twilight_gateway::{Config, ConfigBuilder, Session, Shard, ShardId};
 
@@ -54,37 +55,35 @@ pub async fn save(info: &[Info]) -> anyhow::Result<()> {
 }
 
 /// Restores shard resumption information from the file system.
-pub async fn restore(config: Config, shards: u32) -> Vec<Shard> {
+pub async fn restore(config: Config, recommended_shards: u32) -> Vec<Shard> {
     let info = async {
         let contents = fs::read(INFO_FILE).await?;
         Ok::<_, anyhow::Error>(serde_json::from_slice::<Vec<Info>>(&contents)?)
     }
     .await;
 
-    let shard_ids = (0..shards).map(|shard| ShardId::new(shard, shards));
-
-    // A session may only be successfully resumed if it retains its shard ID, but
-    // Discord may have recommend a different shard count (producing different shard
-    // IDs).
-    let shards: Vec<_> = if let Ok(info) = info
-        && info.len() == shards as usize
+    // The recommended shard count targets 1000 guilds per shard (out of a maximum
+    // of 2500), so it might be different from the previous shard count.
+    let shards = if let Ok(info) = info
+        && recommended_shards / 2 <= info.len() as u32
     {
         tracing::info!("resuming previous gateway sessions");
-        shard_ids
+        let configs = iter::repeat_n(config, info.len())
             .zip(info)
-            .map(|(shard_id, info)| {
-                let builder = ConfigBuilder::from(config.clone()).resume_info(info);
-                Shard::with_config(shard_id, builder.build())
-            })
-            .collect()
+            .map(|(config, info)| ConfigBuilder::from(config).resume_info(info).build());
+        shards(configs).collect()
     } else {
-        shard_ids
-            .map(|shard_id| Shard::with_config(shard_id, config.clone()))
-            .collect()
+        shards(iter::repeat_n(config, recommended_shards as usize)).collect()
     };
 
     // Resumed or not, the saved resume info is now stale.
     _ = fs::remove_file(INFO_FILE).await;
 
     shards
+}
+
+fn shards(iter: impl ExactSizeIterator<Item = Config>) -> impl ExactSizeIterator<Item = Shard> {
+    let total = iter.len() as u32;
+    iter.zip((0..total).map(move |id| ShardId::new(id, total)))
+        .map(|(config, shard_id)| Shard::with_config(shard_id, config))
 }

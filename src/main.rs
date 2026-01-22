@@ -38,19 +38,6 @@ async fn main() -> anyhow::Result<()> {
     let info = async { Ok::<_, anyhow::Error>(http.gateway().authed().await?.model().await?) }
         .await
         .context("getting info")?;
-    async {
-        http.interaction(APPLICATION_ID)
-            .set_global_commands(&command::global_commands())
-            .await?;
-        http.interaction(APPLICATION_ID)
-            .set_guild_commands(ADMIN_GUILD_ID, &command::admin_commands(info.shards))
-            .await?;
-        Ok::<_, anyhow::Error>(())
-    }
-    .await
-    .context("putting commands")?;
-    let shard_handles = DashMap::new();
-    context::initialize(http, shard_handles);
 
     // The queue defaults are static and may be incorrect for large or newly
     // restarted bots.
@@ -61,8 +48,24 @@ async fn main() -> anyhow::Result<()> {
         info.session_start_limit.total,
     );
     let config = ConfigBuilder::new(token, INTENTS).queue(queue).build();
-
     let shards = resume::restore(config, info.shards).await;
+
+    async {
+        http.interaction(APPLICATION_ID)
+            .set_global_commands(&command::global_commands())
+            .await?;
+        http.interaction(APPLICATION_ID)
+            .set_guild_commands(
+                ADMIN_GUILD_ID,
+                &command::admin_commands(shards.len() as u32),
+            )
+            .await?;
+        Ok::<_, anyhow::Error>(())
+    }
+    .await
+    .context("putting commands")?;
+    let shard_handles = DashMap::with_capacity(shards.len());
+    context::initialize(http, shard_handles);
 
     let tasks = shards
         .into_iter()
