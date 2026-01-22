@@ -25,7 +25,7 @@ pub fn command(shards: u32) -> Command {
         )
         .option(BooleanBuilder::new(
             "resume",
-            "Resume ression? [default: false]",
+            "Resume session? [default: false]",
         ))
         .build()
 }
