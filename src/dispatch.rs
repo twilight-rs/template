@@ -11,7 +11,7 @@ pub enum ShardRestartResult {
 }
 
 impl ShardRestartResult {
-    pub fn is_forced(&self) -> bool {
+    pub fn is_forced(self) -> bool {
         matches!(self, Self::ForcedRestart)
     }
 }
@@ -90,24 +90,12 @@ impl State {
     }
 }
 
-pub struct Dispatcher<'a> {
-    #[allow(dead_code)]
-    pub shard: &'a mut Shard,
-    tracker: &'a TaskTracker,
-}
-
-impl<'a> Dispatcher<'a> {
-    fn new(shard: &'a mut Shard, tracker: &'a TaskTracker) -> Self {
-        Self { shard, tracker }
-    }
-
-    pub fn dispatch(self, future: impl Future<Output = ()> + Send + 'static) {
-        self.tracker.spawn(future);
-    }
-}
-
 #[tracing::instrument(name = "dispatcher", fields(shard.id = shard.id().number()), skip_all)]
-pub async fn run(mut shard: Shard, mut event_handler: impl FnMut(Dispatcher, Event)) -> ResumeInfo {
+pub async fn run<Fut: Future<Output = ()> + Send + 'static, S>(
+    mut event_handler: impl FnMut(Event, S) -> Fut,
+    mut shard: Shard,
+    mut shard_state_provider: impl FnMut(&mut Shard) -> S,
+) -> ResumeInfo {
     let mut receiver = ShardHandle::insert(shard.id());
     let mut shutdown = pin!(signal::ctrl_c());
     let tracker = TaskTracker::new();
@@ -132,11 +120,8 @@ pub async fn run(mut shard: Shard, mut event_handler: impl FnMut(Dispatcher, Eve
                 event = shard.next_event(EVENT_TYPES) => {
                     match event {
                         Some(Ok(Event::GatewayClose(_))) if !state.is_active() => break,
-                        Some(Ok(event)) => event_handler(Dispatcher::new(&mut shard, &tracker), event),
-                        Some(Err(error)) => {
-                            tracing::warn!(error = &error as &dyn Error, "shard failed to receive an event");
-                            continue;
-                        }
+                        Some(Ok(event)) => _ = tracker.spawn(event_handler(event, shard_state_provider(&mut shard))),
+                        Some(Err(error)) => tracing::warn!(error = &error as &dyn Error, "shard failed to receive event"),
                         None => break,
                     }
                 }
