@@ -57,7 +57,7 @@ pub async fn save(info: &[Info]) -> anyhow::Result<()> {
 pub async fn restore(config: Config, shards: u32) -> Vec<Shard> {
     let info = async {
         let contents = fs::read(INFO_FILE).await?;
-        Ok::<_, anyhow::Error>(serde_json::from_slice::<Vec<Info>>(&contents)?)
+        anyhow::Ok(serde_json::from_slice::<Vec<Info>>(&contents)?)
     }
     .await;
 

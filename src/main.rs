@@ -3,8 +3,8 @@ mod context;
 mod dispatch;
 mod resume;
 
-pub(crate) use self::{
-    context::CONTEXT,
+pub use self::{
+    context::CTX,
     dispatch::{ShardHandle, ShardRestartKind},
     resume::{ConfigBuilderExt, Info as ResumeInfo},
 };
@@ -16,15 +16,10 @@ use tokio::signal;
 use tracing::{Instrument as _, instrument::Instrumented};
 use twilight_gateway::{ConfigBuilder, Event, EventTypeFlags, Intents, queue::InMemoryQueue};
 use twilight_http::Client;
-use twilight_model::id::{
-    Id,
-    marker::{ApplicationMarker, GuildMarker},
-};
+use twilight_model::id::{Id, marker::GuildMarker};
 
 #[rustfmt::skip]
 const ADMIN_GUILD_ID: Id<GuildMarker> = Id::new({{admin_guild_id}});
-#[rustfmt::skip]
-const APPLICATION_ID: Id<ApplicationMarker> = Id::new({{application_id}});
 const EVENT_TYPES: EventTypeFlags = EventTypeFlags::INTERACTION_CREATE;
 const INTENTS: Intents = Intents::empty();
 
@@ -35,22 +30,25 @@ async fn main() -> anyhow::Result<()> {
     let token = env::var("TOKEN").context("reading `TOKEN`")?;
 
     let http = Client::new(token.clone());
-    let info = async { Ok::<_, anyhow::Error>(http.gateway().authed().await?.model().await?) }
+    let app = async { anyhow::Ok(http.current_user_application().await?.model().await?) }
+        .await
+        .context("getting app")?;
+    let info = async { anyhow::Ok(http.gateway().authed().await?.model().await?) }
         .await
         .context("getting info")?;
     async {
-        http.interaction(APPLICATION_ID)
+        http.interaction(app.id)
             .set_global_commands(&command::global_commands())
             .await?;
-        http.interaction(APPLICATION_ID)
+        http.interaction(app.id)
             .set_guild_commands(ADMIN_GUILD_ID, &command::admin_commands(info.shards))
             .await?;
-        Ok::<_, anyhow::Error>(())
+        anyhow::Ok(())
     }
     .await
     .context("putting commands")?;
-    let shard_handles = DashMap::new();
-    context::initialize(http, shard_handles);
+    let shards = DashMap::new();
+    context::init(app.id, http, shards);
 
     // The queue defaults are static and may be incorrect for large or newly
     // restarted bots.
@@ -73,11 +71,11 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("shutting down; press CTRL-C to abort");
 
     let join_all_tasks = async {
-        let mut resume_info = Vec::new();
+        let mut resume_info = Vec::with_capacity(tasks.len());
         for task in tasks {
             resume_info.push(task.await?);
         }
-        Ok::<_, anyhow::Error>(resume_info)
+        anyhow::Ok(resume_info)
     };
     let resume_info = tokio::select! {
         _ = signal::ctrl_c() => Vec::new(),
@@ -103,9 +101,9 @@ async fn event_handler(event: Event, _state: ()) {
 
     #[allow(clippy::single_match)]
     match event {
-        Event::InteractionCreate(event) => {
-            let span = tracing::info_span!("interaction", id = %event.id);
-            log_err(command::interaction(event).instrument(span)).await;
+        Event::InteractionCreate(interaction) => {
+            let span = tracing::info_span!("interaction", id = %interaction.id);
+            log_err(command::handler(interaction).instrument(span)).await;
         }
         _ => {}
     }

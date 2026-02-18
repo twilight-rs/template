@@ -1,4 +1,4 @@
-use crate::{APPLICATION_ID, CONTEXT};
+use crate::CTX;
 use twilight_model::{
     application::{
         command::{Command, CommandType},
@@ -17,13 +17,16 @@ pub fn command() -> Command {
 }
 
 pub async fn autocomplete(
-    _event: Box<InteractionCreate>,
+    _interaction: Box<InteractionCreate>,
     _data: Box<CommandData>,
 ) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn run(event: Box<InteractionCreate>, _data: Box<CommandData>) -> anyhow::Result<()> {
+pub async fn run(
+    interaction: Box<InteractionCreate>,
+    _data: Box<CommandData>,
+) -> anyhow::Result<()> {
     let data = InteractionResponseData {
         content: Some("Pong!".to_owned()),
         flags: Some(MessageFlags::EPHEMERAL),
@@ -34,10 +37,8 @@ pub async fn run(event: Box<InteractionCreate>, _data: Box<CommandData>) -> anyh
         kind: InteractionResponseType::ChannelMessageWithSource,
         data: Some(data),
     };
-    CONTEXT
-        .http
-        .interaction(APPLICATION_ID)
-        .create_response(event.id, &event.token, &response)
+    CTX.interaction()
+        .create_response(interaction.id, &interaction.token, &response)
         .await?;
 
     Ok(())

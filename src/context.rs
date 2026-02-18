@@ -1,22 +1,35 @@
 use crate::ShardHandle;
 use dashmap::DashMap;
 use std::{ops::Deref, sync::OnceLock};
-use twilight_http::Client;
+use twilight_http::{Client, client::InteractionClient};
+use twilight_model::id::{Id, marker::ApplicationMarker};
 
-pub static CONTEXT: Ref = Ref(OnceLock::new());
+pub static CTX: Ref = Ref(OnceLock::new());
 
 #[derive(Debug)]
 pub struct Context {
+    pub application_id: Id<ApplicationMarker>,
     pub http: Client,
-    pub shard_handles: DashMap<u32, ShardHandle>,
+    pub shards: DashMap<u32, ShardHandle>,
 }
 
-pub fn initialize(http: Client, shard_handles: DashMap<u32, ShardHandle>) {
+impl Context {
+    pub fn interaction(&self) -> InteractionClient<'_> {
+        self.http.interaction(self.application_id)
+    }
+}
+
+pub fn init(
+    application_id: Id<ApplicationMarker>,
+    http: Client,
+    shards: DashMap<u32, ShardHandle>,
+) {
     let context = Context {
+        application_id,
         http,
-        shard_handles,
+        shards,
     };
-    assert!(CONTEXT.0.set(context).is_ok());
+    assert!(CTX.0.set(context).is_ok());
 }
 
 pub struct Ref(OnceLock<Context>);

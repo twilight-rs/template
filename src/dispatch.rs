@@ -1,4 +1,4 @@
-use crate::{CONTEXT, ConfigBuilderExt as _, EVENT_TYPES, ResumeInfo};
+use crate::{CTX, ConfigBuilderExt as _, EVENT_TYPES, ResumeInfo};
 use std::{error::Error, pin::pin};
 use tokio::{signal, sync::watch};
 use tokio_util::task::TaskTracker;
@@ -23,9 +23,7 @@ pub struct ShardHandle(watch::Sender<Option<ShardRestartKind>>);
 impl ShardHandle {
     fn insert(shard_id: ShardId) -> watch::Receiver<Option<ShardRestartKind>> {
         let (tx, rx) = watch::channel(None);
-        CONTEXT
-            .shard_handles
-            .insert(shard_id.number(), ShardHandle(tx));
+        CTX.shards.insert(shard_id.number(), ShardHandle(tx));
 
         rx
     }
