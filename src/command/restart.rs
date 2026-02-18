@@ -1,4 +1,4 @@
-use crate::{APPLICATION_ID, CONTEXT, ShardRestartKind};
+use crate::{CTX, ShardRestartKind};
 use std::iter;
 use twilight_model::{
     application::{
@@ -31,7 +31,7 @@ pub fn command(shards: u32) -> Command {
 }
 
 pub async fn autocomplete(
-    event: Box<InteractionCreate>,
+    interaction: Box<InteractionCreate>,
     mut data: Box<CommandData>,
 ) -> anyhow::Result<()> {
     let choice = |shard_id: u32| CommandOptionChoice {
@@ -45,15 +45,13 @@ pub async fn autocomplete(
         unreachable!()
     };
 
-    let choices: Vec<_> = match value.parse() {
+    let choices = match value.parse() {
         Ok(shard_id) if shard_id == 0 => vec![choice(shard_id)],
-        Ok(shard_id) => starts_with(shard_id, CONTEXT.shard_handles.len() as u32)
+        Ok(shard_id) => starts_with(shard_id, CTX.shards.len() as u32)
             .take(25)
             .map(choice)
             .collect(),
-        Err(_) => (0..25.min(CONTEXT.shard_handles.len() as u32))
-            .map(choice)
-            .collect(),
+        Err(_) => (0..25.min(CTX.shards.len() as u32)).map(choice).collect(),
     };
     let data = InteractionResponseData {
         choices: Some(choices),
@@ -64,16 +62,17 @@ pub async fn autocomplete(
         kind: InteractionResponseType::ApplicationCommandAutocompleteResult,
         data: Some(data),
     };
-    CONTEXT
-        .http
-        .interaction(APPLICATION_ID)
-        .create_response(event.id, &event.token, &response)
+    CTX.interaction()
+        .create_response(interaction.id, &interaction.token, &response)
         .await?;
 
     Ok(())
 }
 
-pub async fn run(event: Box<InteractionCreate>, mut data: Box<CommandData>) -> anyhow::Result<()> {
+pub async fn run(
+    interaction: Box<InteractionCreate>,
+    mut data: Box<CommandData>,
+) -> anyhow::Result<()> {
     let mut options = data.options.drain(..);
     let CommandOptionValue::Integer(shard_id) = options.next().unwrap().value else {
         unreachable!()
@@ -86,12 +85,8 @@ pub async fn run(event: Box<InteractionCreate>, mut data: Box<CommandData>) -> a
         _ => ShardRestartKind::Normal,
     };
 
-    let shard_handle = CONTEXT
-        .shard_handles
-        .get(&(shard_id as u32))
-        .unwrap()
-        .clone();
-    let restart_result = shard_handle.restart(kind);
+    let shard = CTX.shards.get(&(shard_id as u32)).unwrap().clone();
+    let restart_result = shard.restart(kind);
 
     let response = if restart_result.is_forced() {
         tracing::debug!(shard.id = shard_id, "force restarting shard");
@@ -110,31 +105,23 @@ pub async fn run(event: Box<InteractionCreate>, mut data: Box<CommandData>) -> a
             data: None,
         }
     };
-    CONTEXT
-        .http
-        .interaction(APPLICATION_ID)
-        .create_response(event.id, &event.token, &response)
+    CTX.interaction()
+        .create_response(interaction.id, &interaction.token, &response)
         .await?;
     if restart_result.is_forced() {
         return Ok(());
     }
 
-    shard_handle.restarted().await;
-    let is_restarted = CONTEXT
-        .shard_handles
-        .get(&(shard_id as u32))
-        .unwrap()
-        .is_valid();
+    shard.restarted().await;
+    let is_restarted = CTX.shards.get(&(shard_id as u32)).unwrap().is_valid();
 
     let content = if is_restarted {
         "Shard restarted"
     } else {
         "Bot shut down"
     };
-    CONTEXT
-        .http
-        .interaction(APPLICATION_ID)
-        .update_response(&event.token)
+    CTX.interaction()
+        .update_response(&interaction.token)
         .content(Some(content))
         .await?;
 

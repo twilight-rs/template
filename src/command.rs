@@ -33,28 +33,28 @@ impl From<&str> for Kind {
     }
 }
 
-pub async fn interaction(mut event: Box<InteractionCreate>) -> anyhow::Result<()> {
-    match event.kind {
+pub async fn handler(mut interaction: Box<InteractionCreate>) -> anyhow::Result<()> {
+    match interaction.kind {
         InteractionType::ApplicationCommandAutocomplete => {
-            let InteractionData::ApplicationCommand(data) = event.data.take().unwrap() else {
+            let InteractionData::ApplicationCommand(data) = interaction.data.take().unwrap() else {
                 unreachable!();
             };
             let kind = data.name.as_str().into();
 
             match kind {
-                Kind::Ping => ping::autocomplete(event, data).await?,
-                Kind::Restart => restart::autocomplete(event, data).await?,
+                Kind::Ping => ping::autocomplete(interaction, data).await?,
+                Kind::Restart => restart::autocomplete(interaction, data).await?,
             }
         }
         InteractionType::ApplicationCommand => {
-            let InteractionData::ApplicationCommand(data) = event.data.take().unwrap() else {
+            let InteractionData::ApplicationCommand(data) = interaction.data.take().unwrap() else {
                 unreachable!();
             };
             let kind = data.name.as_str().into();
 
             match kind {
-                Kind::Ping => ping::run(event, data).await?,
-                Kind::Restart => restart::run(event, data).await?,
+                Kind::Ping => ping::run(interaction, data).await?,
+                Kind::Restart => restart::run(interaction, data).await?,
             }
         }
         _ => {}
