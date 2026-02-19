@@ -48,21 +48,9 @@ async fn main() -> anyhow::Result<()> {
     let config = ConfigBuilder::new(token, INTENTS).queue(queue).build();
     let shards = resume::restore(config, info.shards).await;
 
-    async {
-        http.interaction(app.id)
-            .set_global_commands(&command::global_commands())
-            .await?;
-        http.interaction(app.id)
-            .set_guild_commands(
-                ADMIN_GUILD_ID,
-                &command::admin_commands(shards.len() as u32),
-            )
-            .await?;
-        anyhow::Ok(())
-    }
-    .await
-    .context("putting commands")?;
     context::init(app.id, http, DashMap::with_capacity(shards.len()));
+
+    command::register().await.context("registering commands")?;
 
     let tasks = shards
         .into_iter()

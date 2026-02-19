@@ -1,20 +1,20 @@
 mod ping;
 mod restart;
 
+use crate::{ADMIN_GUILD_ID, CTX};
 use twilight_model::{
-    application::{
-        command::Command,
-        interaction::{InteractionData, InteractionType},
-    },
+    application::interaction::{InteractionData, InteractionType},
     gateway::payload::incoming::InteractionCreate,
 };
 
-pub fn admin_commands(shards: u32) -> [Command; 1] {
-    [restart::command(shards)]
-}
-
-pub fn global_commands() -> [Command; 1] {
-    [ping::command()]
+pub async fn register() -> anyhow::Result<()> {
+    CTX.interaction()
+        .set_global_commands(&[ping::command()])
+        .await?;
+    CTX.interaction()
+        .set_guild_commands(ADMIN_GUILD_ID, &[restart::command(CTX.shards.len() as u32)])
+        .await?;
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug)]
