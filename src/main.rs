@@ -10,7 +10,6 @@ pub use self::{
 };
 
 use anyhow::Context as _;
-use dashmap::DashMap;
 use std::{env, pin::pin, time::Duration};
 use tokio::signal;
 use tracing::{Instrument as _, instrument::Instrumented};
@@ -48,14 +47,13 @@ async fn main() -> anyhow::Result<()> {
     let config = ConfigBuilder::new(token, INTENTS).queue(queue).build();
     let shards = resume::restore(config, info.shards).await;
 
-    context::init(app.id, http, DashMap::with_capacity(shards.len()));
+    context::init(app.id, http, shards.len() as u32);
 
     command::register().await.context("registering commands")?;
 
     let tasks = shards
-        .into_iter()
         .map(|shard| tokio::spawn(dispatch::run(event_handler, shard, |_shard| ())))
-        .collect::<Vec<_>>();
+        .collect::<Box<[_]>>();
 
     signal::ctrl_c().await?;
     tracing::info!("shutting down; press CTRL-C to abort");

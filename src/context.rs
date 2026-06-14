@@ -19,15 +19,11 @@ impl Context {
     }
 }
 
-pub fn init(
-    application_id: Id<ApplicationMarker>,
-    http: Client,
-    shards: DashMap<u32, ShardHandle>,
-) {
+pub fn init(application_id: Id<ApplicationMarker>, http: Client, shards: u32) {
     let context = Context {
         application_id,
         http,
-        shards,
+        shards: DashMap::with_capacity(shards as usize),
     };
     assert!(CTX.0.set(context).is_ok());
 }
