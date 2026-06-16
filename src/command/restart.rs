@@ -73,11 +73,10 @@ pub async fn run(
     interaction: Box<InteractionCreate>,
     mut data: Box<CommandData>,
 ) -> anyhow::Result<()> {
-    let mut options = data.options.drain(..);
-    let CommandOptionValue::Integer(shard_id) = options.next().unwrap().value else {
+    let CommandOptionValue::Integer(shard_id) = data.options.pop().unwrap().value else {
         unreachable!()
     };
-    let kind = match options.next() {
+    let kind = match data.options.pop() {
         Some(CommandDataOption {
             value: CommandOptionValue::Boolean(true),
             ..
