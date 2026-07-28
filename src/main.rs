@@ -11,9 +11,11 @@ pub use self::{
 
 use anyhow::Context as _;
 use std::{env, pin::pin, time::Duration};
-use tokio::signal;
+use tokio::{runtime::Builder as RuntimeBuilder, signal};
 use tracing::{Instrument as _, instrument::Instrumented};
-use twilight_gateway::{ConfigBuilder, Event, EventTypeFlags, Intents, queue::InMemoryQueue};
+use twilight_gateway::{
+    ConfigBuilder, Event, EventTypeFlags, Intents, Shard, queue::InMemoryQueue,
+};
 use twilight_http::Client;
 use twilight_model::id::{Id, marker::GuildMarker};
 
@@ -22,18 +24,20 @@ const ADMIN_GUILD_ID: Id<GuildMarker> = Id::new({{admin_guild_id}});
 const EVENT_TYPES: EventTypeFlags = EventTypeFlags::INTERACTION_CREATE;
 const INTENTS: Intents = Intents::empty();
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let token = env::var("TOKEN").context("reading `TOKEN`")?;
 
+    let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;
+    let _guard = rt.enter();
+
     let http = Client::new(token.clone());
-    let app = async { anyhow::Ok(http.current_user_application().await?.model().await?) }
-        .await
+    let app = rt
+        .block_on(async { anyhow::Ok(http.current_user_application().await?.model().await?) })
         .context("getting app")?;
-    let info = async { anyhow::Ok(http.gateway().authed().await?.model().await?) }
-        .await
+    let info = rt
+        .block_on(async { anyhow::Ok(http.gateway().authed().await?.model().await?) })
         .context("getting info")?;
 
     // The queue defaults are static and may be incorrect for large or newly
@@ -45,10 +49,18 @@ async fn main() -> anyhow::Result<()> {
         info.session_start_limit.total,
     );
     let config = ConfigBuilder::new(token, INTENTS).queue(queue).build();
-    let shards = resume::restore(config, info.shards).await;
+    let shards = resume::restore(config, info.shards);
 
     context::init(app.id, http, shards.len() as u32);
 
+    let resume_info = rt.block_on(event_loop(shards))?;
+
+    resume::save(&resume_info).context("saving resume info")?;
+
+    Ok(())
+}
+
+async fn event_loop(shards: impl Iterator<Item = Shard>) -> anyhow::Result<Vec<ResumeInfo>> {
     command::register().await.context("registering commands")?;
 
     let tasks = shards
@@ -65,17 +77,10 @@ async fn main() -> anyhow::Result<()> {
         }
         anyhow::Ok(resume_info)
     };
-    let resume_info = tokio::select! {
-        _ = signal::ctrl_c() => Vec::new(),
-        resume_info = join_all_tasks => resume_info?,
-    };
-
-    // Save shard information to be restored.
-    resume::save(&resume_info)
-        .await
-        .context("saving resume info")?;
-
-    Ok(())
+    tokio::select! {
+        _ = signal::ctrl_c() => Ok(Vec::new()),
+        resume_info = join_all_tasks => resume_info,
+    }
 }
 
 async fn event_handler(event: Event, _state: ()) {
