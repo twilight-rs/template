@@ -10,8 +10,9 @@ pub use self::{
 };
 
 use anyhow::Context as _;
-use std::{env, pin::pin, time::Duration};
+use std::{convert::identity, env, pin::pin, time::Duration};
 use tokio::{runtime::Builder as RuntimeBuilder, signal};
+use tokio_stream::StreamExt as _;
 use tracing::{Instrument as _, instrument::Instrumented};
 use twilight_gateway::{
     ConfigBuilder, Event, EventTypeFlags, Intents, Shard, queue::InMemoryQueue,
@@ -60,7 +61,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn event_loop(shards: impl Iterator<Item = Shard>) -> anyhow::Result<Vec<ResumeInfo>> {
+async fn event_loop(shards: impl Iterator<Item = Shard>) -> anyhow::Result<Box<[ResumeInfo]>> {
     command::register().await.context("registering commands")?;
 
     let tasks = shards
@@ -70,16 +71,10 @@ async fn event_loop(shards: impl Iterator<Item = Shard>) -> anyhow::Result<Vec<R
     signal::ctrl_c().await?;
     tracing::info!("shutting down; press CTRL-C to abort");
 
-    let join_all_tasks = async {
-        let mut resume_info = Vec::with_capacity(tasks.len());
-        for task in tasks {
-            resume_info.push(task.await?);
-        }
-        anyhow::Ok(resume_info)
-    };
+    let results = tokio_stream::iter(tasks).then(identity);
     tokio::select! {
-        _ = signal::ctrl_c() => Ok(Vec::new()),
-        resume_info = join_all_tasks => resume_info,
+        _ = signal::ctrl_c() => Ok(Box::default()),
+        resume_info = results.collect::<Result<_, _>>() => anyhow::Ok(resume_info?),
     }
 }
 
