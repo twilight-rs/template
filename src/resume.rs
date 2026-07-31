@@ -56,14 +56,10 @@ pub fn save(info: &[Info]) -> anyhow::Result<()> {
 
 /// Restores shard resumption information from the file system.
 pub fn restore(config: Config, recommended_shards: u32) -> impl ExactSizeIterator<Item = Shard> {
-    let info = (|| {
-        let contents = fs::read(INFO_FILE)?;
-        anyhow::Ok(serde_json::from_slice::<Box<[_]>>(&contents)?)
-    })();
-
     // The recommended shard count targets 1000 guilds per shard (out of a maximum
     // of 2500), so it might be different from the previous shard count.
-    let configs = if let Ok(info) = info
+    let configs = if let Ok(contents) = fs::read(INFO_FILE)
+        && let Ok(info) = serde_json::from_slice::<Box<[_]>>(&contents)
         && recommended_shards / 2 <= info.len() as u32
     {
         tracing::info!("resuming previous gateway sessions");
