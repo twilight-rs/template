@@ -66,7 +66,7 @@ async fn event_loop(shards: impl Iterator<Item = Shard>) -> anyhow::Result<Box<[
 
     let tasks = shards
         .map(|shard| tokio::spawn(dispatch::run(event_handler, shard, |_shard| ())))
-        .collect::<Box<[_]>>();
+        .collect::<Box<_>>();
 
     signal::ctrl_c().await?;
     tracing::info!("shutting down; press CTRL-C to abort");
