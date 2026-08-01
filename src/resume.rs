@@ -1,7 +1,6 @@
 use either::Either;
 use serde::{Deserialize, Serialize};
-use std::iter;
-use tokio::fs;
+use std::{fs, iter};
 use twilight_gateway::{Config, ConfigBuilder, Session, Shard, ShardId};
 
 const INFO_FILE: &str = "resume-info.json";
@@ -46,29 +45,21 @@ impl From<&Shard> for Info {
 }
 
 /// Saves shard resumption information to the file system.
-pub async fn save(info: &[Info]) -> anyhow::Result<()> {
+pub fn save(info: &[Info]) -> anyhow::Result<()> {
     if !info.iter().all(Info::is_none) {
         let contents = serde_json::to_vec(&info)?;
-        fs::write(INFO_FILE, contents).await?;
+        fs::write(INFO_FILE, contents)?;
     }
 
     Ok(())
 }
 
 /// Restores shard resumption information from the file system.
-pub async fn restore(
-    config: Config,
-    recommended_shards: u32,
-) -> impl ExactSizeIterator<Item = Shard> {
-    let info = async {
-        let contents = fs::read(INFO_FILE).await?;
-        anyhow::Ok(serde_json::from_slice::<Box<[_]>>(&contents)?)
-    }
-    .await;
-
+pub fn restore(config: Config, recommended_shards: u32) -> impl ExactSizeIterator<Item = Shard> {
     // The recommended shard count targets 1000 guilds per shard (out of a maximum
     // of 2500), so it might be different from the previous shard count.
-    let configs = if let Ok(info) = info
+    let configs = if let Ok(contents) = fs::read(INFO_FILE)
+        && let Ok(info) = serde_json::from_slice::<Box<[_]>>(&contents)
         && recommended_shards / 2 <= info.len() as u32
     {
         tracing::info!("resuming previous gateway sessions");
@@ -82,7 +73,7 @@ pub async fn restore(
     };
 
     // Resumed or not, the saved resume info is now stale.
-    _ = fs::remove_file(INFO_FILE).await;
+    _ = fs::remove_file(INFO_FILE);
 
     let total = configs.len() as u32;
     configs
