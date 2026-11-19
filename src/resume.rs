@@ -1,7 +1,7 @@
 use either::Either;
 use serde::{Deserialize, Serialize};
 use std::{fs, iter};
-use twilight_gateway::{Config, ConfigBuilder, Session, Shard, ShardId};
+use twilight_gateway::{Config, ConfigBuilder, Session, Shard};
 
 const INFO_FILE: &str = "resume-info.json";
 
@@ -75,8 +75,7 @@ pub fn restore(config: Config, recommended_shards: u32) -> impl ExactSizeIterato
     // Resumed or not, the saved resume info is now stale.
     _ = fs::remove_file(INFO_FILE);
 
-    let total = configs.len() as u32;
-    configs
-        .zip((0..total).map(move |id| ShardId::new(id, total)))
-        .map(|(config, shard_id)| Shard::with_config(shard_id, config))
+    twilight_gateway::bucket(0, 1, configs.len() as u32)
+        .zip(configs)
+        .map(|(shard_id, config)| Shard::with_config(shard_id, config))
 }

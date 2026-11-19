@@ -7,9 +7,12 @@ use twilight_model::{
     },
     gateway::payload::incoming::InteractionCreate,
     guild::Permissions,
-    http::interaction::{InteractionResponse, InteractionResponseData, InteractionResponseType},
+    http::interaction::{InteractionResponse, InteractionResponseType},
 };
-use twilight_util::builder::command::{BooleanBuilder, CommandBuilder, IntegerBuilder};
+use twilight_util::builder::{
+    command::{BooleanBuilder, CommandBuilder, IntegerBuilder},
+    interaction_response::{AutocompleteBuilder, ChannelMessageBuilder},
+};
 
 pub const NAME: &str = "restart";
 
@@ -53,15 +56,8 @@ pub async fn autocomplete(
             .collect(),
         Err(_) => (0..25.min(CTX.shards.len() as u32)).map(choice).collect(),
     };
-    let data = InteractionResponseData {
-        choices: Some(choices),
-        ..Default::default()
-    };
 
-    let response = InteractionResponse {
-        kind: InteractionResponseType::ApplicationCommandAutocompleteResult,
-        data: Some(data),
-    };
+    let response = AutocompleteBuilder::new(choices).build();
     CTX.interaction()
         .create_response(interaction.id, &interaction.token, &response)
         .await?;
@@ -90,14 +86,9 @@ pub async fn run(
 
     let response = if restart_result.is_forced() {
         tracing::debug!(shard.id = shard_id, "force restarting shard");
-        let data = InteractionResponseData {
-            content: Some("Force restarted shard".to_owned()),
-            ..Default::default()
-        };
-        InteractionResponse {
-            kind: InteractionResponseType::ChannelMessageWithSource,
-            data: Some(data),
-        }
+        ChannelMessageBuilder::new()
+            .content("Force restarted shard")
+            .build()
     } else {
         tracing::debug!(shard.id = shard_id, ?kind, "restarting shard");
         InteractionResponse {
