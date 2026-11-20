@@ -15,7 +15,7 @@ tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-twilight-gateway = "0.17"
-twilight-http = "0.17"
-twilight-model = "0.17"
-twilight-util = { version = "0.17", features = ["builder"] }
+twilight-gateway = "0.18"
+twilight-http = "0.18"
+twilight-model = "0.18"
+twilight-util = { version = "0.18", features = ["builder"] }

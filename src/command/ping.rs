@@ -6,9 +6,10 @@ use twilight_model::{
     },
     channel::message::MessageFlags,
     gateway::payload::incoming::InteractionCreate,
-    http::interaction::{InteractionResponse, InteractionResponseData, InteractionResponseType},
 };
-use twilight_util::builder::command::CommandBuilder;
+use twilight_util::builder::{
+    command::CommandBuilder, interaction_response::ChannelMessageBuilder,
+};
 
 pub const NAME: &str = "ping";
 
@@ -27,16 +28,10 @@ pub async fn run(
     interaction: Box<InteractionCreate>,
     _data: Box<CommandData>,
 ) -> anyhow::Result<()> {
-    let data = InteractionResponseData {
-        content: Some("Pong!".to_owned()),
-        flags: Some(MessageFlags::EPHEMERAL),
-        ..Default::default()
-    };
-
-    let response = InteractionResponse {
-        kind: InteractionResponseType::ChannelMessageWithSource,
-        data: Some(data),
-    };
+    let response = ChannelMessageBuilder::new()
+        .content("Pong!")
+        .flags(MessageFlags::EPHEMERAL)
+        .build();
     CTX.interaction()
         .create_response(interaction.id, &interaction.token, &response)
         .await?;
